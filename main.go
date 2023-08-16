@@ -39,6 +39,10 @@ func main() {
 	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
 
+	// Register funcs as a callback for fixing Twitter/X URL.
+	dg.AddHandler(messageReactionAddHandlerForTwitterUrl)
+	dg.AddHandler(messageCreateTwitterUrlChecker)
+
 	// In this example, we only care about receiving message events.
 	dg.Identify.Intents = discordgo.IntentsAllWithoutPrivileged
 
@@ -59,6 +63,51 @@ func main() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 }
+
+func messageReactionAddHandlerForTwitterUrl(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
+	if r.GuildID == "" {
+		return
+	}
+	msg, err := s.ChannelMessage(r.ChannelID, r.MessageID)
+	if err != nil {
+		fmt.Println("Error fetching message:", err)
+		return
+	}
+	if r.UserID != msg.Author.ID {
+		return
+	}
+
+	err = s.MessageReactionsRemoveAll(r.ChannelID, r.MessageID)
+	if err != nil {
+		fmt.Println("Error removing reactions:", err)
+		return
+	}
+
+	modifiedContent := strings.ReplaceAll(msg.Content, "//x.com/", "//vxtwitter.com/")
+	modifiedContent = strings.ReplaceAll(modifiedContent, "//twitter.com/", "//vxtwitter.com/")
+
+	_, err = s.ChannelMessageSendReply(r.ChannelID, modifiedContent, msg.Reference())
+	if err != nil {
+		fmt.Println("Error sending message:", err)
+		return
+	}
+}
+
+func messageCreateTwitterUrlChecker(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.GuildID == "" {
+		return
+	}
+	if !strings.Contains(m.Content, "//x.com/") && !strings.Contains(m.Content, "//twitter.com/") {
+		return
+	}
+
+	err := s.MessageReactionAdd(m.ChannelID, m.ID, "❌")
+	if err != nil {
+		fmt.Println("Error adding reaction:", err)
+		return
+	}
+}
+
 
 // This function will be called (due to AddHandler above) every time a new
 // message is created on any channel that the authenticated bot has access to.
