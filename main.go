@@ -91,7 +91,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	servKey := fmt.Sprintf("%s-keywords", servID)
 	chanKey := fmt.Sprintf("%s-%s-keywords", servID, chanID)
-	reserved := []string{"등록", "삭제", "목록", "격리", "이동"}
+	reserved := []string{"등록", "삭제", "목록", "격리", "이동", "복구"}
 
 	chanIsolationKey := fmt.Sprintf("%s-%s-isolated", servID, chanID)
 	_, err := rd.Get(ctx, chanIsolationKey).Result()
@@ -106,6 +106,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	} else {
 		hkey = servKey
 	}
+	rkey := fmt.Sprintf("%s-recover", hkey)
 
 	keywords := rd.HKeys(ctx, hkey).Val()
 	switch cmd {
@@ -161,8 +162,36 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 
-		rd.HSet(ctx, hkey, k, v)
-		replyX(s, m, fmt.Sprintf("키워드 %s 등록을 완료했습니다", k))
+		prevVal := rd.HGet(ctx, hkey, k).Val()
+		if len(prevVal) > 0 {
+			rd.HSet(ctx, rkey, k, prevVal)
+			rd.HSet(ctx, hkey, k, v)
+			replyX(s, m, fmt.Sprintf("키워드 %s 덮어쓰기를 완료했습니다", k))
+		} else {
+			rd.HSet(ctx, hkey, k, v)
+			replyX(s, m, fmt.Sprintf("키워드 %s 등록을 완료했습니다", k))
+		}
+
+	case "복구":
+		r := regexp.MustCompile(`^(\S+)`)
+		match := r.FindAllStringSubmatch(args, -1)
+		if match == nil || len(match[0]) != 2 {
+			return
+		}
+
+		k := strings.TrimSpace(match[0][1])
+		rVal := rd.HGet(ctx, rkey, k).Val()
+		if len(rVal) == 0 {
+			return
+		}
+
+		cVal := rd.HGet(ctx, hkey, k).Val()
+		if len(cVal) > 0 {
+			rd.HSet(ctx, rkey, k, cVal)
+		}
+
+		rd.HSet(ctx, hkey, k, rVal)
+		replyX(s, m, fmt.Sprintf("키워드 %s 복구를 완료했습니다\n%s", k, rVal))
 
 	case "삭제":
 		r := regexp.MustCompile(`^(\S+)`)
@@ -173,6 +202,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 		k := strings.TrimSpace(match[0][1])
 		rd.HDel(ctx, hkey, k)
+		rd.HDel(ctx, rkey, k)
 		replyX(s, m, fmt.Sprintf("키워드 %s 삭제를 완료했습니다", k))
 
 	case "격리":
