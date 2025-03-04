@@ -42,6 +42,9 @@ func main() {
 	// Register the messageReactionAdd func as a callback for MessageReactionAdd events.
 	dg.AddHandler(messageReactionAdd)
 
+	// Register the messageReactionRemove func as a callback for MessageReactionRemove events.
+	dg.AddHandler(messageReactionRemove)
+
 	// We need message and reaction intents
 	dg.Identify.Intents = discordgo.IntentsAllWithoutPrivileged | discordgo.IntentsGuildMessageReactions
 
@@ -285,16 +288,76 @@ func replyX(s *discordgo.Session, m *discordgo.MessageCreate, msg string) {
 // This function will be called every time a reaction is added to any message
 // that the authenticated bot has access to.
 func messageReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
-	// Check if the reaction is a pin emoji
-	if r.Emoji.Name == "📌" || r.Emoji.Name == "pushpin" {
+	// Log the emoji information for debugging
+	log(map[string]string{
+		"msg":        "Reaction added",
+		"emoji_name": r.Emoji.Name,
+		"emoji_id":   r.Emoji.ID,
+		"channel_id": r.ChannelID,
+		"message_id": r.MessageID,
+	})
+
+	// Check if the reaction is a pushpin emoji (📌)
+	if r.Emoji.Name == "📌" {
+		// Check if the message is already pinned
+		pins, err := s.ChannelMessagesPinned(r.ChannelID)
+		if err != nil {
+			log(map[string]string{"msg": "error getting pinned messages", "err": err.Error(), "level": "error"})
+			return
+		}
+
+		// Check if the message is already in the pinned messages
+		for _, pin := range pins {
+			if pin.ID == r.MessageID {
+				// Message is already pinned, no need to pin it again
+				log(map[string]string{"msg": "Message already pinned", "channel_id": r.ChannelID, "message_id": r.MessageID})
+				return
+			}
+		}
+
 		// Pin the message to the channel
-		err := s.ChannelMessagePin(r.ChannelID, r.MessageID)
+		err = s.ChannelMessagePin(r.ChannelID, r.MessageID)
 		if err != nil {
 			log(map[string]string{"msg": "error pinning message", "err": err.Error(), "level": "error"})
 			return
 		}
 
 		log(map[string]string{"msg": "Message pinned successfully", "channel_id": r.ChannelID, "message_id": r.MessageID})
+	}
+}
+
+// This function will be called every time a reaction is removed from any message
+// that the authenticated bot has access to.
+func messageReactionRemove(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
+	// Log the emoji information for debugging
+	log(map[string]string{
+		"msg":        "Reaction removed",
+		"emoji_name": r.Emoji.Name,
+		"emoji_id":   r.Emoji.ID,
+		"channel_id": r.ChannelID,
+		"message_id": r.MessageID,
+	})
+
+	// Check if the reaction is a pushpin emoji (📌)
+	if r.Emoji.Name == "📌" {
+		// Check for 📌 reactions
+		pinReactions, err := s.MessageReactions(r.ChannelID, r.MessageID, "📌", 100, "", "")
+		if err != nil {
+			log(map[string]string{"msg": "error getting 📌 reactions", "err": err.Error(), "level": "error"})
+			return
+		}
+
+		// If there are no more pin reactions, unpin the message
+		if len(pinReactions) == 0 {
+			// Unpin the message
+			err := s.ChannelMessageUnpin(r.ChannelID, r.MessageID)
+			if err != nil {
+				log(map[string]string{"msg": "error unpinning message", "err": err.Error(), "level": "error"})
+				return
+			}
+
+			log(map[string]string{"msg": "Message unpinned successfully", "channel_id": r.ChannelID, "message_id": r.MessageID})
+		}
 	}
 }
 
