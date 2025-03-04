@@ -39,8 +39,11 @@ func main() {
 	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
 
-	// In this example, we only care about receiving message events.
-	dg.Identify.Intents = discordgo.IntentsAllWithoutPrivileged
+	// Register the messageReactionAdd func as a callback for MessageReactionAdd events.
+	dg.AddHandler(messageReactionAdd)
+
+	// We need message and reaction intents
+	dg.Identify.Intents = discordgo.IntentsAllWithoutPrivileged | discordgo.IntentsGuildMessageReactions
 
 	// Open a websocket connection to Discord and begin listening.
 	err = dg.Open()
@@ -112,7 +115,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	switch cmd {
 	case "목록":
 		var msg string
-		if keywords == nil || len(keywords) == 0 {
+		if len(keywords) == 0 {
 			msg = "등록된 키워드가 없습니다"
 		} else {
 			msg = strings.Join(keywords, ", ")
@@ -276,6 +279,22 @@ func replyX(s *discordgo.Session, m *discordgo.MessageCreate, msg string) {
 	_, err := s.ChannelMessageSendReply(m.ChannelID, msg, m.Reference())
 	if err != nil {
 		panic(err)
+	}
+}
+
+// This function will be called every time a reaction is added to any message
+// that the authenticated bot has access to.
+func messageReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
+	// Check if the reaction is a pin emoji
+	if r.Emoji.Name == "📌" || r.Emoji.Name == "pushpin" {
+		// Pin the message to the channel
+		err := s.ChannelMessagePin(r.ChannelID, r.MessageID)
+		if err != nil {
+			log(map[string]string{"msg": "error pinning message", "err": err.Error(), "level": "error"})
+			return
+		}
+
+		log(map[string]string{"msg": "Message pinned successfully", "channel_id": r.ChannelID, "message_id": r.MessageID})
 	}
 }
 
